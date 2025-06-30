@@ -3,7 +3,7 @@ import casadi as ca
 
 # Simulation parameters
 T = 2.0      # Total time (s)
-N = 10       # Number of time steps
+N = 30       # Number of time steps
 dt = T / N   # Time step
 
 # Cart-pole parameters
@@ -104,29 +104,52 @@ v_vals = x_opt[2*N:3*N]
 omega_vals = x_opt[3*N:4*N]
 u_vals = x_opt[4*N:5*N]
 
-# (Optional) Plot results
-import matplotlib.pyplot as plt
-t = np.linspace(0, T, N)
+plot = True
+sim  = True
 
-plt.figure(figsize=(12, 6))
-plt.subplot(3, 1, 1)
-plt.plot(t, x_vals, label='x (cart position)')
-plt.ylabel("States")
-plt.legend()
-plt.grid()
+if sim:
+    from env import simulate_cart_pole
+    config = {
+        "m1": m_cart,  # Cart mass
+        "m2": m_pole,  # Pole mass
+        "l": l_pole,   # Pole length
+    }
+    simulate_cart_pole(r=int(1/dt),config=config,controls=u_vals)
 
-plt.subplot(3, 1, 2)
-plt.plot(t, theta_vals, label='theta (pole angle)')
-plt.ylabel("angle [rad]")
-plt.legend()
-plt.grid()
 
-plt.subplot(3, 1, 3)
-plt.plot(t, u_vals, label='u (control input)', color='black')
-plt.xlabel("Time [s]")
-plt.ylabel("Control")
-plt.grid()
-plt.legend()
 
-plt.tight_layout()
-plt.show()
+if plot:
+    # (Optional) Plot results
+    import matplotlib.pyplot as plt
+    t = np.linspace(0, T, N)
+    plt.figure(figsize=(12, 8))
+    plt.subplot(3, 1, 1)
+    plt.plot(t, x_vals,label='x (cart position)')
+    plt.scatter(t, x_vals, color='red', s=50, marker='o')
+    plt.scatter(t, x_vals, color='white', s=20, marker='o')
+    plt.axhline(2, color='gray', linestyle='--', label='target x=2')
+    plt.axhline(-2, color='gray', linestyle='--', label='target x=-2')
+    plt.axhline(0, color='gray', linestyle='--', linewidth=0.8)
+    plt.ylabel("position [m]")
+
+    plt.subplot(3, 1, 2)
+    plt.plot(t, theta_vals, label='theta (pole angle)')
+    plt.scatter(t, theta_vals, color='red', s=50, marker='o')
+    plt.scatter(t, theta_vals, color='white', s=20, marker='o')
+    plt.axhline(np.pi, color='gray', linestyle='--', label='target θ=π')
+    plt.axhline(-np.pi, color='gray', linestyle='--', label='target θ=π')
+    plt.axhline(0, color='gray', linestyle='--', linewidth=0.8)
+    plt.ylabel("angle [rad]")
+
+    plt.subplot(3, 1, 3)
+    plt.plot(t, u_vals, label='u (control input)', color='black')
+    plt.scatter(t, u_vals, color='purple', s=50, marker='o')
+    plt.scatter(t, u_vals, color='white', s=20, marker='o')
+    plt.axhline(0, color='gray', linestyle='--', linewidth=0.8)
+    plt.axhline(-20, color='gray', linestyle='--')
+    plt.axhline(20, color='gray', linestyle='--')
+    plt.xlabel("Time [s]")
+    plt.ylabel("force [N]")
+
+    plt.tight_layout()
+    plt.show()
