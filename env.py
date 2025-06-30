@@ -5,9 +5,11 @@ import numpy as  np
 
 def simulate_cart_pole(r,config,controls):
     ### ADJUST CANVAS ###
-    scene.background    = color.white
-    scene.range         = 3
-    scene.align         = 'left'
+    my_canvas = canvas(width=1200, height=600, background=color.white)
+    my_canvas.select()
+    current = canvas.get_selected()
+    current.range         = 3
+    current.align         = 'left'
     ### CONSTANT ###
     print(r)
     cart_mass   = config["m1"]# kg

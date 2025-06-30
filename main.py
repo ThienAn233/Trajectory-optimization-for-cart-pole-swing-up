@@ -104,7 +104,7 @@ v_vals = x_opt[2*N:3*N]
 omega_vals = x_opt[3*N:4*N]
 u_vals = x_opt[4*N:5*N]
 
-plot = True
+plot = False
 sim  = True
 
 if sim:
