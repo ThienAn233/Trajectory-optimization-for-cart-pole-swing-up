@@ -1,61 +1,132 @@
 import numpy as np
 import casadi as ca
 
-# Define the time step and total time
-T = 2.0  # total time (s)
-N = 10   # number of time steps
-dt= T / N  # time step size (s)
+# Simulation parameters
+T = 2.0      # Total time (s)
+N = 10       # Number of time steps
+dt = T / N   # Time step
 
-# Define the cart-pole system parameters
-m_cart = 1.0  # mass of the cart (kg)
-m_pole = 0.3  # mass of the pole (kg)
-l_pole = 0.5  # length of the pole (m)
-gr     = 9.81  # acceleration due to gravity (m/s^2) 
+# Cart-pole parameters
+m_cart = 1.0
+m_pole = 0.3
+l_pole = 0.5
+gr = 9.81
 
-# Define the state and control variables
-x = ca.SX.sym('x',N)  # position of the cart
-theta = ca.SX.sym('theta',N)  # angle of the pole
-v = ca.SX.sym('v',N)  # velocity of the cart
-omega = ca.SX.sym('omega',N)  # angular velocity of the pole
-u = ca.SX.sym('u',N)  # force applied to the cart
+# Create symbolic variables for each time step
+x_list, theta_list, v_list, omega_list, u_list = [], [], [], [], []
 
-# Define the state vector
-states = ca.horzcat(x, theta, v, omega)
-controls = ca.horzcat(u)
-# Stack the state and control variables
-vars = ca.horzcat(states, controls)
-n_states = states.size1()
-n_controls = controls.size1()
+for i in range(N):
+    x_list.append(ca.SX.sym(f'x_{i}'))
+    theta_list.append(ca.SX.sym(f'theta_{i}'))
+    v_list.append(ca.SX.sym(f'v_{i}'))
+    omega_list.append(ca.SX.sym(f'omega_{i}'))
+    u_list.append(ca.SX.sym(f'u_{i}'))
 
-# Define the dynamics of the system
+# Stack all variables into a single optimization vector
+X = ca.vertcat(*x_list, *theta_list, *v_list, *omega_list, *u_list)
+
+# Helpers to extract state/control at a given timestep
+def get_state(i):
+    return ca.vertcat(x_list[i], theta_list[i], v_list[i], omega_list[i])
+
+def get_control(i):
+    return u_list[i]
+
+# Dynamics function
 def dynamics(s, u):
-    x, theta, v, omega = ca.horzsplit(s)
+    x, theta, v, omega = s[0], s[1], s[2], s[3]
     dx = v
     dtheta = omega
-    dv = (u + m_pole * l_pole * omega**2 * ca.sin(theta) + m_pole * gr * ca.cos(theta) * ca.sin(theta)) / (m_cart + m_pole*(1 - ca.cos(theta)**2))
-    domega = (-u * ca.cos(theta) - m_pole * l_pole * omega**2 * ca.sin(theta) *ca.cos(theta) - (m_cart + m_pole) * gr * ca.sin(theta)) / (l_pole * (m_cart + m_pole*(1 - ca.cos(theta)**2)))
-    return ca.horzcat(dx, dtheta, dv, domega)
+    denom = m_cart + m_pole * (1 - ca.cos(theta)**2)
+    dv = (u + m_pole * l_pole * omega**2 * ca.sin(theta) + m_pole * gr * ca.cos(theta) * ca.sin(theta)) / denom
+    domega = (-u * ca.cos(theta) - m_pole * l_pole * omega**2 * ca.sin(theta) * ca.cos(theta) - (m_cart + m_pole) * gr * ca.sin(theta)) / (l_pole * denom)
+    return ca.vertcat(dx, dtheta, dv, domega)
 
-# Define the bounds for the state and control variables
-d_max = 2  # maximum displacement of the cart (m)
-u_max = 20 # maximum force applied to the cart (N)
-lbx = ca.repmat(ca.SX([-d_max,-ca.inf,-ca.inf,-ca.inf,-u_max]),N)
-ubx = ca.repmat(ca.SX([ d_max, ca.inf, ca.inf, ca.inf, u_max]),N)
-
-# Equality constraints
+# Dynamics and boundary constraints
 g = []
-for i in range(N-1):
-    # Apply trapezoid colocation for the dynamics constraints
-    g.append(states[i+1,:] - states[i,:] - (dt) * (dynamics(states[i,:], controls[i,:]) + dynamics(states[i+1,:], controls[i+1,:])) / 2)
-g.append(states[0,0:4]  - ca.SX([[0,0,0,0]]))
-g.append(states[-1,0:4] - ca.SX([[d_max,np.pi,0,0]]))
 
-# objective function for minmal control effort
+for i in range(N - 1):
+    s_i = get_state(i)
+    s_ip1 = get_state(i + 1)
+    u_i = get_control(i)
+    u_ip1 = get_control(i + 1)
+    f_i = dynamics(s_i, u_i)
+    f_ip1 = dynamics(s_ip1, u_ip1)
+    g.append(s_ip1 - s_i - (dt/2)*(f_i + f_ip1))
+# Initial and final conditions
+g.append(get_state(0) - ca.vertcat(0, 0, 0, 0))               # Start at rest at 0
+g.append(get_state(N - 1) - ca.vertcat(2, np.pi, 0, 0))       # End at rest at position 2, pole upright
+# Objective: minimize total control effort
 f = 0
-for i in range(N-1):
-    f += ca.mtimes(controls[i,:].T, controls[i,:])  # minimize the control effort
- 
+for i in range(N - 1):
+    u_i = get_control(i)
+    u_ip1 = get_control(i + 1)
+    f += 0.5 * dt * (u_i**2 + u_ip1**2)
 
-# Create the optimization problem
-nlp = {'x': vars, 'f': 0, 'g': g}
-sol = ca.nlpsol()
+# Stack all constraints
+G = ca.vertcat(*g)
+# Define NLP
+nlp = {'x': X, 'f': f, 'g': G}
+
+# Create solver
+solver = ca.nlpsol("S", "ipopt", nlp)
+
+# Bounds on variables
+d_max = 2
+u_max = 20
+lbx = [-d_max]*N + [-ca.inf]*N + [-ca.inf]*N + [-ca.inf]*N + [-u_max]*N
+ubx = [ d_max]*N + [ ca.inf]*N + [ ca.inf]*N + [ ca.inf]*N + [ u_max]*N
+
+# Bounds on constraints (equality constraints: g == 0)
+lbg = [0]*((N+1)*4) #+ [ca.vertcat(0, 0, 0, 0)]*2
+ubg = [0]*((N+1)*4) #+ [ca.vertcat(0, 0, 0, 0)]*2
+
+# Initial guess for optimization variables
+x0 = []
+for i in range(N):
+    x0 += [d_max*i/N]        # Linearly increasing cart position
+for i in range(N):
+    x0 += [np.pi*i/N]        # Linearly increasing pole angle
+for _ in range(2*N):
+    x0 += [0]            # Zero for  v, omega
+for _ in range(N):
+    x0 += [0]            # Zero control input
+
+
+# Solve
+sol = solver(x0=x0,lbx=lbx, ubx=ubx, lbg=lbg, ubg=ubg)
+
+# Extract solution
+x_opt = sol['x'].full().flatten()
+x_vals = x_opt[0:N]
+theta_vals = x_opt[N:2*N]
+v_vals = x_opt[2*N:3*N]
+omega_vals = x_opt[3*N:4*N]
+u_vals = x_opt[4*N:5*N]
+
+# (Optional) Plot results
+import matplotlib.pyplot as plt
+t = np.linspace(0, T, N)
+
+plt.figure(figsize=(12, 6))
+plt.subplot(3, 1, 1)
+plt.plot(t, x_vals, label='x (cart position)')
+plt.ylabel("States")
+plt.legend()
+plt.grid()
+
+plt.subplot(3, 1, 2)
+plt.plot(t, theta_vals, label='theta (pole angle)')
+plt.ylabel("angle [rad]")
+plt.legend()
+plt.grid()
+
+plt.subplot(3, 1, 3)
+plt.plot(t, u_vals, label='u (control input)', color='black')
+plt.xlabel("Time [s]")
+plt.ylabel("Control")
+plt.grid()
+plt.legend()
+
+plt.tight_layout()
+plt.show()
