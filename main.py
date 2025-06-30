@@ -42,7 +42,7 @@ u_max = 20 # maximum force applied to the cart (N)
 lbx = ca.repmat(ca.SX([-d_max,-ca.inf,-ca.inf,-ca.inf,-u_max]),N)
 ubx = ca.repmat(ca.SX([ d_max, ca.inf, ca.inf, ca.inf, u_max]),N)
 
-# equality constraints
+# Equality constraints
 g = []
 for i in range(N-1):
     # Apply trapezoid colocation for the dynamics constraints
@@ -50,6 +50,10 @@ for i in range(N-1):
 g.append(states[0,0:4]  - ca.SX([[0,0,0,0]]))
 g.append(states[-1,0:4] - ca.SX([[d_max,np.pi,0,0]]))
 
+# objective function for minmal control effort
+f = 0
+for i in range(N-1):
+    f += ca.mtimes(controls[i,:].T, controls[i,:])  # minimize the control effort
  
 
 # Create the optimization problem
